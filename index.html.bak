@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF 编辑器</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e1e2e'/><path d='M25 20 L25 80 L75 80 L75 48 L62 48 L62 35 L48 35 L48 20 Z' fill='%23cdd6f4'/><path d='M48 20 L48 35 L62 35 Z' fill='%23a6adc8'/><path d='M62 35 L62 48 L75 48 Z' fill='%23f5f5f5'/><path d='M35 42 L55 42 M35 50 L58 50 M35 56 L52 56' stroke='%2389b4fa' stroke-width='2.5' stroke-linecap='round'/><path d='M60 58 L78 38 L74 34 L56 54 Z' fill='%23f38ba8'/><path d='M78 38 L82 42 L74 34 Z' fill='%23fab387'/></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#1a1b26;--surface:#1e2030;--surface2:#242538;--border:#363854;
+  --text:#c0caf5;--text2:#565f89;--accent:#7aa2f7;--accent2:#3d59a1;
+  --danger:#f7768e;--success:#9ece6a;--warning:#e0af68;
+  --radius:6px;--shadow:0 1px 3px rgba(0,0,0,.3);
+  --toolbar-h:44px;--sidebar-w:240px;--statusbar-h:32px
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:13px;user-select:none}
+
+/* 顶部工具栏 */
+.toolbar{display:flex;align-items:center;gap:2px;height:var(--toolbar-h);padding:0 8px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;z-index:10}
+.toolbar .group{display:flex;align-items:center;gap:1px;padding:0 6px}
+.toolbar .group + .group{border-left:1px solid var(--border);margin-left:4px;padding-left:10px}
+.toolbar button{height:32px;padding:0 10px;border:none;background:transparent;color:var(--text2);border-radius:var(--radius);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:4px;white-space:nowrap;transition:all .12s}
+.toolbar button:hover{background:var(--surface2);color:var(--text)}
+.toolbar button.primary{background:var(--accent2);color:#fff}
+.toolbar button.primary:hover{background:var(--accent)}
+.toolbar button.danger:hover{background:rgba(247,118,142,.15);color:var(--danger)}
+.toolbar .spacer{flex:1}
+.toolbar .page-indicator{font-size:12px;color:var(--text2);padding:0 10px;white-space:nowrap}
+.zoom-ctl{display:flex;align-items:center;gap:2px;background:var(--bg);border-radius:var(--radius);padding:2px}
+.zoom-ctl button{width:28px;height:28px;padding:0;justify-content:center;font-size:14px}
+.zoom-ctl input{width:48px;height:28px;text-align:center;background:transparent;border:none;color:var(--text);font-size:12px;outline:none}
+
+/* 主区域 */
+.main{display:flex;flex:1;overflow:hidden}
+
+/* 左侧缩略图面板 */
+.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar-header{height:36px;display:flex;align-items:center;padding:0 12px;font-size:12px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);flex-shrink:0;gap:6px}
+.sidebar-header span{flex:1}
+.sidebar-header .page-total{font-weight:400;color:var(--text2);font-size:11px}
+.sidebar-list{flex:1;overflow-y:auto;padding:6px}
+.sidebar-list::-webkit-scrollbar{width:4px}
+.sidebar-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.thumb-item{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:var(--radius);cursor:pointer;margin-bottom:2px;border:1.5px solid transparent;transition:all .1s}
+.thumb-item:hover{background:var(--surface2)}
+.thumb-item.active{border-color:var(--accent);background:rgba(122,162,247,.08)}
+.thumb-item .thumb-num{font-size:11px;color:var(--text2);min-width:20px;text-align:center;font-weight:500}
+.thumb-item .thumb-preview{width:52px;height:68px;background:var(--bg);border-radius:3px;overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+.thumb-item .thumb-preview canvas{max-width:100%;max-height:100%}
+.thumb-item.drag-over{border-color:var(--accent);background:rgba(122,162,247,.12)}
+
+/* PDF 预览 */
+.viewer{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;background:#1a1b26;padding:30px}
+.viewer::-webkit-scrollbar{width:8px;height:8px}
+.viewer::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+.viewer canvas{box-shadow:0 2px 12px rgba(0,0,0,.4);border-radius:2px;background:#fff}
+.viewer .drop-zone{display:flex;flex-direction:column;align-items:center;gap:12px;color:var(--text2)}
+.viewer .drop-zone .icon{font-size:56px;opacity:.5}
+.viewer .drop-zone p{font-size:15px}
+.viewer .drop-zone .hint{font-size:12px;color:var(--text2)}
+
+/* 底部状态栏 */
+.statusbar{display:flex;align-items:center;height:var(--statusbar-h);padding:0 12px;background:var(--surface);border-top:1px solid var(--border);flex-shrink:0;font-size:11px;color:var(--text2);gap:16px}
+.statusbar .sep{width:1px;height:14px;background:var(--border)}
+
+/* 模态框 */
+.hidden{display:none!important}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:1000}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;min-width:380px;max-width:520px;box-shadow:0 12px 40px rgba(0,0,0,.5)}
+.modal h3{font-size:15px;margin-bottom:16px;font-weight:600}
+.modal .row{display:flex;align-items:center;gap:10px;margin-bottom:10px;font-size:13px}
+.modal .row label{min-width:72px;color:var(--text2);font-size:12px}
+.modal .row input,.modal .row select{flex:1;padding:7px 10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;outline:none}
+.modal .row input:focus,.modal .row select:focus{border-color:var(--accent)}
+.modal .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
+.modal .actions button{padding:7px 16px;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;font-size:13px;transition:all .12s}
+.modal .actions .btn-cancel{background:var(--surface);color:var(--text)}
+.modal .actions .btn-cancel:hover{background:var(--surface2)}
+.modal .actions .btn-ok{background:var(--accent2);color:#fff;border-color:var(--accent2)}
+.modal .actions .btn-ok:hover{background:var(--accent)}
+input[type="file"]{display:none}
+
+@media(max-width:768px){.sidebar{width:160px}.toolbar button{font-size:11px;padding:0 6px}.toolbar .group{padding:0 3px}.viewer{padding:12px}}
+</style>
+</head>
+<body>
+
+<div class="toolbar" id="toolbar">
+  <button onclick="document.getElementById('fileInput').click()" class="primary">📂 打开 PDF</button>
+  <input type="file" id="fileInput" accept=".pdf" onchange="openFile(event)">
+  <button onclick="openMergeModal()">📑 合并 PDF</button>
+  <span class="sep"></span>
+  <button onclick="rotatePage(-90)" title="逆时针旋转">↺ 旋转</button>
+  <button onclick="deletePage()" class="danger" title="删除页面">🗑 删除</button>
+  <button onclick="extractPage()" title="提取页面">✂ 提取</button>
+  </div>
+  <div class="group">
+    <button onclick="openTextModal()" title="文字批注">📝 批注</button>
+    <button onclick="openSignatureModal()" title="手写签名">✍ 签名</button>
+    <button onclick="openInsertModal()" title="插入页面">📄 插入</button>
+  </div>
+  <div class="spacer"></div>
+  <span class="page-indicator" id="pageInfo">未打开</span>
+  <div class="group">
+    <div class="zoom-ctl">
+      <button onclick="zoomOut()">−</button>
+      <input type="number" id="zoomInput" value="100" min="10" max="400">
+      <span style="font-size:11px;color:var(--text2);width:14px">%</span>
+      <button onclick="zoomIn()">+</button>
+      <button onclick="fitPage()" title="适合页面">⊞</button>
+    </div>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <span>📄 页面</span>
+      <span class="page-total" id="pageTotal"></span>
+    </div>
+    <div class="sidebar-list" id="thumbList">
+      <div style="color:var(--text2);text-align:center;padding:20px;font-size:13px">打开 PDF 后显示缩略图</div>
+    </div>
+  </div>
+  <div class="viewer" id="viewer">
+    <div class="drop-zone" id="dropZone">
+      <div class="icon">📄</div>
+      <p>拖放 PDF 文件到此处</p>
+      <p class="hint">或点击上方 "打开" 按钮</p>
+    </div>
+  </div>
+</div>
+
+<!-- 底部状态栏 -->
+<div class="statusbar">
+  <span id="statusFileName">未打开文件</span>
+  <span class="sep"></span>
+  <span id="statusPageInfo">-</span>
+  <span class="sep"></span>
+  <span id="statusFileSize"></span>
+  <span style="flex:1"></span>
+  <span>PDF 编辑器 v2.0</span>
+</div>
+
+<!-- Text Annotation Modal -->
+<div class="modal-overlay hidden" id="textModal">
+  <div class="modal">
+    <h3>📝 添加文字</h3>
+    <div class="row"><label>文字内容</label><input id="textContent" placeholder="输入文字..."></div>
+    <div class="row"><label>字体大小</label><input id="textSize" type="number" value="24" min="8" max="200"></div>
+    <div class="row"><label>颜色</label><input id="textColor" type="color" value="#000000"></div>
+    <div class="row"><label>X 位置</label><input id="textX" type="number" value="50" min="0"></div>
+    <div class="row"><label>Y 位置</label><input id="textY" type="number" value="100" min="0"></div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeTextModal()">取消</button>
+      <button class="btn-ok" onclick="addText()">添加</button>
+    </div>
+  </div>
+</div>
+
+<!-- Signature Modal -->
+<div class="modal-overlay hidden" id="sigModal">
+  <div class="modal" style="min-width:420px">
+    <h3>✍ 手写签名</h3>
+    <canvas id="sigCanvas" style="width:380px;height:160px;background:#fff;border-radius:8px;touch-action:none;cursor:crosshair;display:block;margin:0 auto 12px"></canvas>
+    <div style="display:flex;gap:8px;justify-content:center;margin-bottom:8px">
+      <button onclick="clearSignature()" style="padding:6px 14px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:var(--radius);cursor:pointer">🗑 清除</button>
+      <button onclick="setSigColor('#000000')" style="padding:6px 14px;border:1px solid #000;background:#000;color:#fff;border-radius:var(--radius);cursor:pointer">黑</button>
+      <button onclick="setSigColor('#1e88e5')" style="padding:6px 14px;border:1px solid #1e88e5;background:#1e88e5;color:#fff;border-radius:var(--radius);cursor:pointer">蓝</button>
+      <button onclick="setSigColor('#e53935')" style="padding:6px 14px;border:1px solid #e53935;background:#e53935;color:#fff;border-radius:var(--radius);cursor:pointer">红</button>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeSignatureModal()">取消</button>
+      <button class="btn-ok" onclick="addSignature()">添加到PDF</button>
+    </div>
+  </div>
+</div>
+
+<!-- Insert Page Modal -->
+<div class="modal-overlay hidden" id="insertModal">
+  <div class="modal">
+    <h3>📄 插入页面</h3>
+    <div class="row">
+      <label>插入位置</label>
+      <select id="insertPos" style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px">
+        <option value="after">当前页之后</option>
+        <option value="before">当前页之前</option>
+        <option value="end">文档末尾</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>来源</label>
+      <select id="insertSource" onchange="toggleInsertSource()" style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px">
+        <option value="blank">空白页</option>
+        <option value="image">图片 → PDF</option>
+        <option value="pdf">另一个 PDF</option>
+      </select>
+    </div>
+    <div id="insertBlankOpts">
+      <div class="row"><label>页面尺寸</label>
+        <select id="insertPageSize" style="flex:1;padding:8px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px">
+          <option value="A4">A4 (210×297mm)</option>
+          <option value="letter">Letter</option>
+          <option value="legal">Legal</option>
+        </select>
+      </div>
+    </div>
+    <div id="insertFileOpts" class="hidden">
+      <button onclick="document.getElementById('insertFileInput').click()" class="btn" style="width:100%;padding:12px;border:1px dashed var(--border);background:var(--bg);color:var(--text2);border-radius:var(--radius);cursor:pointer">
+        📂 选择文件
+      </button>
+      <input type="file" id="insertFileInput" accept=".png,.jpg,.jpeg,.pdf" onchange="onInsertFileSelected(event)">
+      <div id="insertFileName" style="font-size:13px;color:var(--text2);margin-top:8px"></div>
+    </div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeInsertModal()">取消</button>
+      <button class="btn-ok" onclick="doInsertPage()">插入</button>
+    </div>
+  </div>
+</div>
+
+<!-- Merge Modal -->
+<div class="modal-overlay hidden" id="mergeModal">
+  <div class="modal">
+    <h3>📑 合并 PDF</h3>
+    <div class="row"><label>当前文档</label><span id="mergeCurrent">未打开</span></div>
+    <div class="row"><label>添加文档</label><button onclick="document.getElementById('mergeInput').click()" style="font-size:12px;padding:6px 12px">选择文件</button></div>
+    <input type="file" id="mergeInput" accept=".pdf" multiple onchange="onMergeFilesSelected(event)">
+    <div id="mergeFileList" style="max-height:120px;overflow-y:auto;font-size:13px;color:var(--text2)"></div>
+    <div class="actions">
+      <button class="btn-cancel" onclick="closeMergeModal()">取消</button>
+      <button class="btn-ok" onclick="doMerge()">合并</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+
+// State
+let pdfDoc = null;
+let currentPage = 1;
+let zoom = 1.0;
+let pdfBytes = null;
+let mergeFiles = [];
+
+// Make functions global
+window.openFile = openFile;
+window.openMergeModal = openMergeModal;
+window.closeMergeModal = closeMergeModal;
+window.onMergeFilesSelected = onMergeFilesSelected;
+window.doMerge = doMerge;
+window.rotatePage = rotatePage;
+window.deletePage = deletePage;
+window.extractPage = extractPage;
+window.savePDF = savePDF;
+window.saveCurrentPage = saveCurrentPage;
+window.zoomIn = zoomIn;
+window.zoomOut = zoomOut;
+window.setZoom = setZoom;
+window.fitPage = fitPage;
+
+// Load stored PDF on startup
+const stored = localStorage.getItem('pdf-editor-data');
+if (stored) {
+  try {
+    const arr = JSON.parse(stored);
+    pdfBytes = new Uint8Array(arr);
+    loadPDF(pdfBytes);
+  } catch(e) { localStorage.removeItem('pdf-editor-data'); }
+}
+
+// Drag & drop
+const viewer = document.getElementById('viewer');
+viewer.addEventListener('dragover', e => { e.preventDefault(); viewer.style.background = '#2a2a3e'; });
+viewer.addEventListener('dragleave', () => { viewer.style.background = ''; });
+viewer.addEventListener('drop', e => {
+  e.preventDefault();
+  viewer.style.background = '';
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') readFile(file);
+});
+
+async function openFile(e) {
+  const file = e.target.files[0];
+  if (file) {
+    document.getElementById('statusFileName').textContent = file.name;
+    document.getElementById('statusFileSize').textContent = file.size > 1048576 ? `${(file.size/1048576).toFixed(1)} MB` : `${(file.size/1024).toFixed(0)} KB`;
+    await readFile(file);
+  }
+  e.target.value = '';
+}
+
+async function readFile(file) {
+  const buf = await file.arrayBuffer();
+  pdfBytes = new Uint8Array(buf);
+  saveToStorage();
+  await loadPDF(pdfBytes);
+}
+
+function saveToStorage() {
+  if (pdfBytes) {
+    try { localStorage.setItem('pdf-editor-data', JSON.stringify(Array.from(pdfBytes))); } catch(e) {}
+  }
+}
+
+async function loadPDF(data) {
+  try {
+    pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+    currentPage = 1;
+    document.getElementById('pageTotal').textContent = `${pdfDoc.numPages} 页`;
+    document.getElementById('pageInfo').textContent = `${pdfDoc.numPages} 页`;
+    document.getElementById('statusFileName').textContent = 'PDF 文档';
+    document.getElementById('statusPageInfo').textContent = `1 / ${pdfDoc.numPages} 页`;
+    buildThumbnails();
+    renderPage(currentPage);
+    document.getElementById('dropZone').classList.add('hidden');
+  } catch(e) {
+    alert('无法加载 PDF: ' + e.message);
+  }
+}
+
+async function renderPage(num) {
+  if (!pdfDoc) return;
+  currentPage = Math.max(1, Math.min(num, pdfDoc.numPages));
+  const page = await pdfDoc.getPage(currentPage);
+  const vp = page.getViewport({ scale: zoom });
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = vp.width;
+  canvas.height = vp.height;
+  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  const viewer = document.getElementById('viewer');
+  viewer.innerHTML = '';
+  viewer.appendChild(canvas);
+  document.getElementById('pageInfo').textContent = `${currentPage} / ${pdfDoc.numPages}`;
+  document.getElementById('statusPageInfo').textContent = `${currentPage} / ${pdfDoc.numPages} 页`;
+  document.getElementById('zoomInput').value = Math.round(zoom * 100);
+  updateThumbActive();
+}
+
+async function buildThumbnails() {
+  const list = document.getElementById('thumbList');
+  list.innerHTML = '';
+  const fragment = document.createDocumentFragment();
+  const total = pdfDoc.numPages;
+  const useSimpleList = total > 100; // 大文件模式：延迟渲染缩略图
+  
+  for (let i = 1; i <= total; i++) {
+    const div = document.createElement('div');
+    div.className = 'thumb-item' + (i === currentPage ? ' active' : '');
+    div.dataset.page = i;
+    
+    const numSpan = document.createElement('span');
+    numSpan.className = 'thumb-num';
+    numSpan.textContent = i;
+    div.appendChild(numSpan);
+    
+    const preview = document.createElement('div');
+    preview.className = 'thumb-preview';
+    div.appendChild(preview);
+    
+    if (!useSimpleList || i <= 20 || Math.abs(i - currentPage) <= 5) {
+      // 小文件立即渲染 / 大文件只渲染前20页+附近页
+      renderThumbnail(div, i);
+    } else {
+      preview.textContent = '📄';
+      preview.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:10px;color:#a6adc8';
+    }
+    
+    div.onclick = () => { currentPage = i; renderPage(i); updateThumbActive(); };
+    fragment.appendChild(div);
+  }
+  
+  list.appendChild(fragment);
+  
+  if (useSimpleList) {
+    // 大文件滚动懒加载
+    list.addEventListener('scroll', () => {
+      const items = list.querySelectorAll('.thumb-item');
+      const st = list.scrollTop, ch = list.clientHeight;
+      items.forEach((d, idx) => {
+        const pv = d.querySelector('.thumb-preview');
+        if (!pv || pv.querySelector('canvas') || pv.textContent !== '📄') return;
+        if (d.offsetTop > st - 300 && d.offsetTop < st + ch + 300) {
+          renderThumbnail(d, idx + 1);
+        }
+      });
+    }, { passive: true });
+  }
+  
+  new Sortable(list, {
+    animation: 150,
+    onEnd: () => reorderPages()
+  });
+}
+
+async function renderThumbnail(div, pageNum) {
+  try {
+    const page = await pdfDoc.getPage(pageNum);
+    const vp = page.getViewport({ scale: 0.15 });
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width;
+    canvas.height = vp.height;
+    canvas.style.cssText = 'max-width:100%;max-height:100%';
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    const preview = div.querySelector('.thumb-preview');
+    if (preview) { preview.innerHTML = ''; preview.appendChild(canvas); }
+  } catch (e) {}
+}
+
+function updateThumbActive() {
+  document.querySelectorAll('.thumb-item').forEach(el => {
+    el.classList.toggle('active', +el.dataset.page === currentPage);
+  });
+}
+
+function reorderPages() {
+  const items = document.querySelectorAll('.thumb-item');
+  const newOrder = Array.from(items).map(el => +el.dataset.page);
+  applyReorder(newOrder);
+}
+
+async function applyReorder(order) {
+  if (!pdfDoc || !pdfBytes) return;
+  const { PDFDocument } = PDFLib;
+  const newDoc = await PDFDocument.create();
+  const srcDoc = await PDFDocument.load(pdfBytes);
+  for (const pageNum of order) {
+    const [copied] = await newDoc.copyPages(srcDoc, [pageNum - 1]);
+    newDoc.addPage(copied);
+  }
+  pdfBytes = await newDoc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+}
+
+async function rotatePage(deg) {
+  if (!pdfDoc || !pdfBytes) return;
+  const { PDFDocument } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  const page = doc.getPage(currentPage - 1);
+  page.setRotation(page.getRotation().angle + deg);
+  pdfBytes = await doc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+  renderPage(Math.min(currentPage, pdfDoc.numPages));
+}
+
+async function deletePage() {
+  if (!pdfDoc || !pdfBytes || pdfDoc.numPages <= 1) return;
+  if (!confirm(`确定删除第 ${currentPage} 页吗？`)) return;
+  const { PDFDocument } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  doc.removePage(currentPage - 1);
+  pdfBytes = await doc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+  renderPage(Math.min(currentPage, pdfDoc.numPages));
+}
+
+async function extractPage() {
+  if (!pdfDoc || !pdfBytes) return;
+  const { PDFDocument } = PDFLib;
+  const doc = await PDFDocument.create();
+  const srcDoc = await PDFDocument.load(pdfBytes);
+  const [copied] = await doc.copyPages(srcDoc, [currentPage - 1]);
+  doc.addPage(copied);
+  const extracted = await doc.save();
+  downloadBlob(extracted, `page_${currentPage}.pdf`);
+}
+
+async function savePDF() {
+  if (!pdfBytes) return;
+  if (!pdfDoc) { downloadBlob(pdfBytes, 'document.pdf'); return; }
+  const { PDFDocument } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  const saved = await doc.save();
+  downloadBlob(saved, 'edited.pdf');
+}
+
+async function saveCurrentPage() {
+  if (!pdfDoc || !pdfBytes) return;
+  const page = await pdfDoc.getPage(currentPage);
+  const vp = page.getViewport({ scale: 2 });
+  const canvas = document.createElement('canvas');
+  canvas.width = vp.width;
+  canvas.height = vp.height;
+  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+  canvas.toBlob(b => {
+    const url = URL.createObjectURL(b);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `page_${currentPage}.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+}
+
+function downloadBlob(bytes, filename) {
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function zoomIn() { zoom = Math.min(3, zoom + 0.1); renderPage(currentPage); }
+function zoomOut() { zoom = Math.max(0.2, zoom - 0.1); renderPage(currentPage); }
+function setZoom(v) { zoom = Math.max(0.2, Math.min(3, (+v || 100) / 100)); renderPage(currentPage); }
+function fitPage() { zoom = 1.0; renderPage(currentPage); }
+
+function openMergeModal() {
+  document.getElementById('mergeCurrent').textContent = pdfDoc ? `${pdfDoc.numPages} 页 (当前)` : '未打开';
+  mergeFiles = [];
+  document.getElementById('mergeFileList').innerHTML = '';
+  document.getElementById('mergeModal').classList.remove('hidden');
+}
+
+function closeMergeModal() {
+  document.getElementById('mergeModal').classList.add('hidden');
+}
+
+function onMergeFilesSelected(e) {
+  mergeFiles = Array.from(e.target.files).filter(f => f.type === 'application/pdf');
+  const list = document.getElementById('mergeFileList');
+  list.innerHTML = mergeFiles.map((f, i) => `<div>📄 ${i+1}. ${f.name} (${(f.size/1024).toFixed(1)} KB)</div>`).join('');
+  e.target.value = '';
+}
+
+async function doMerge() {
+  if (!pdfBytes && mergeFiles.length === 0) return;
+  const { PDFDocument } = PDFLib;
+  const merged = await PDFDocument.create();
+  // Add current doc
+  if (pdfBytes) {
+    const src = await PDFDocument.load(pdfBytes);
+    const copied = await merged.copyPages(src, src.getPageIndices());
+    copied.forEach(p => merged.addPage(p));
+  }
+  // Add selected files
+  for (const f of mergeFiles) {
+    const buf = await f.arrayBuffer();
+    const src = await PDFDocument.load(buf);
+    const copied = await merged.copyPages(src, src.getPageIndices());
+    copied.forEach(p => merged.addPage(p));
+  }
+  const result = await merged.save();
+  downloadBlob(result, 'merged.pdf');
+  closeMergeModal();
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (!pdfDoc) return;
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); renderPage(currentPage - 1); }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); renderPage(currentPage + 1); }
+  if (e.key === '+' || e.key === '=') zoomIn();
+  if (e.key === '-') zoomOut();
+  if (e.key === '0') fitPage();
+});
+
+// ════════════════════════════════════════════
+// 📝 文字批注
+// ════════════════════════════════════════════
+let _insertFileData = null; // for insert page
+
+function openTextModal() {
+  if (!pdfDoc) return alert('请先打开一个 PDF 文件');
+  document.getElementById('textModal').classList.remove('hidden');
+}
+
+function closeTextModal() {
+  document.getElementById('textModal').classList.add('hidden');
+}
+
+async function addText() {
+  if (!pdfBytes) return;
+  const { PDFDocument, StandardFonts, rgb } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  const page = doc.getPage(currentPage - 1);
+  const { width, height } = page.getSize();
+  const text = document.getElementById('textContent').value || '文字';
+  const size = +document.getElementById('textSize').value || 24;
+  const color = document.getElementById('textColor').value;
+  const x = +document.getElementById('textX').value || 50;
+  const y = +document.getElementById('textY').value || 100;
+  
+  const r = parseInt(color.slice(1,3),16)/255;
+  const g = parseInt(color.slice(3,5),16)/255;
+  const b = parseInt(color.slice(5,7),16)/255;
+  
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText(text, { x, y: height - y, size, font, color: rgb(r,g,b) });
+  
+  pdfBytes = await doc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+  renderPage(currentPage);
+  closeTextModal();
+}
+
+// ════════════════════════════════════════════
+// ✍ 手写签名
+// ════════════════════════════════════════════
+let _sigCtx = null, _sigDrawing = false, _sigColor = '#000000';
+
+function openSignatureModal() {
+  if (!pdfDoc) return alert('请先打开一个 PDF 文件');
+  document.getElementById('sigModal').classList.remove('hidden');
+  setTimeout(initSignature, 100);
+}
+
+function closeSignatureModal() {
+  document.getElementById('sigModal').classList.add('hidden');
+}
+
+function initSignature() {
+  const canvas = document.getElementById('sigCanvas');
+  canvas.width = canvas.offsetWidth * 2;
+  canvas.height = canvas.offsetHeight * 2;
+  _sigCtx = canvas.getContext('2d');
+  _sigCtx.scale(2, 2);
+  _sigCtx.strokeStyle = _sigColor;
+  _sigCtx.lineWidth = 2.5;
+  _sigCtx.lineCap = 'round';
+  _sigCtx.lineJoin = 'round';
+  
+  canvas.onmousedown = e => { _sigDrawing = true; _sigCtx.beginPath(); _sigCtx.moveTo(e.offsetX, e.offsetY); };
+  canvas.onmousemove = e => { if (!_sigDrawing) return; _sigCtx.lineTo(e.offsetX, e.offsetY); _sigCtx.stroke(); };
+  canvas.onmouseup = () => _sigDrawing = false;
+  canvas.onmouseleave = () => _sigDrawing = false;
+  
+  // Touch support
+  canvas.ontouchstart = e => { e.preventDefault(); const t=e.touches[0]; const r=canvas.getBoundingClientRect(); _sigDrawing=true; _sigCtx.beginPath(); _sigCtx.moveTo(t.clientX-r.left, t.clientY-r.top); };
+  canvas.ontouchmove = e => { e.preventDefault(); if(!_sigDrawing) return; const t=e.touches[0]; const r=canvas.getBoundingClientRect(); _sigCtx.lineTo(t.clientX-r.left, t.clientY-r.top); _sigCtx.stroke(); };
+  canvas.ontouchend = () => _sigDrawing = false;
+}
+
+function setSigColor(c) {
+  _sigColor = c;
+  if (_sigCtx) _sigCtx.strokeStyle = c;
+}
+
+function clearSignature() {
+  if (!_sigCtx) return;
+  _sigCtx.clearRect(0, 0, 400, 200);
+}
+
+async function addSignature() {
+  if (!pdfBytes || !_sigCtx) return;
+  // Check if canvas is blank
+  const canvas = document.getElementById('sigCanvas');
+  const imageData = _sigCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const hasDrawing = imageData.data.some(v => v !== 0);
+  if (!hasDrawing) { alert('请先在画布上签名'); return; }
+  
+  const dataUrl = canvas.toDataURL('image/png');
+  const { PDFDocument, rgb } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  const page = doc.getPage(currentPage - 1);
+  const { width, height } = page.getSize();
+  
+  const pngImage = await doc.embedPng(dataUrl);
+  pngImage.scale(0.5);
+  page.drawImage(pngImage, { x: width/2 - 100, y: 50 });
+  
+  pdfBytes = await doc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+  renderPage(currentPage);
+  closeSignatureModal();
+}
+
+// ════════════════════════════════════════════
+// 📄 插入页面
+// ════════════════════════════════════════════
+function openInsertModal() {
+  if (!pdfDoc) return alert('请先打开一个 PDF 文件');
+  _insertFileData = null;
+  document.getElementById('insertFileName').textContent = '';
+  document.getElementById('insertModal').classList.remove('hidden');
+  toggleInsertSource();
+}
+
+function closeInsertModal() {
+  document.getElementById('insertModal').classList.add('hidden');
+}
+
+function toggleInsertSource() {
+  const src = document.getElementById('insertSource').value;
+  document.getElementById('insertBlankOpts').classList.toggle('hidden', src !== 'blank');
+  document.getElementById('insertFileOpts').classList.toggle('hidden', src === 'blank');
+}
+
+function onInsertFileSelected(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('insertFileName').textContent = `📄 ${file.name} (${(file.size/1024).toFixed(1)} KB)`;
+  const reader = new FileReader();
+  reader.onload = ev => { _insertFileData = ev.target.result; };
+  if (file.type.startsWith('image/')) reader.readAsDataURL(file);
+  else reader.readAsArrayBuffer(file);
+  e.target.value = '';
+}
+
+async function doInsertPage() {
+  if (!pdfBytes) return;
+  const { PDFDocument, PageSizes } = PDFLib;
+  const doc = await PDFDocument.load(pdfBytes);
+  const pos = document.getElementById('insertPos').value;
+  const src = document.getElementById('insertSource').value;
+  const insertIdx = pos === 'end' ? doc.getPageCount() : pos === 'before' ? Math.max(0, currentPage - 1) : Math.min(doc.getPageCount(), currentPage);
+  
+  if (src === 'blank') {
+    const sizeMap = { A4: PageSizes.A4, letter: PageSizes.Letter, legal: PageSizes.Legal };
+    const size = sizeMap[document.getElementById('insertPageSize').value] || PageSizes.A4;
+    const blankPage = doc.addPage(size);
+    // Move to correct position
+    const pages = doc.getPages();
+    const lastIdx = pages.length - 1;
+    for (let i = lastIdx; i > insertIdx; i--) {
+      const temp = pages[i];
+      pages[i] = pages[i-1];
+      pages[i-1] = temp;
+    }
+  } else if (src === 'image' && _insertFileData) {
+    const img = await doc.embedPng(_insertFileData);
+    const page = doc.addPage(PageSizes.A4);
+    const { width, height } = page.getSize();
+    page.drawImage(img, { x: 0, y: 0, width, height });
+    // Move
+    const pages = doc.getPages();
+    const lastIdx = pages.length - 1;
+    for (let i = lastIdx; i > insertIdx; i--) {
+      const temp = pages[i]; pages[i] = pages[i-1]; pages[i-1] = temp;
+    }
+  } else if (src === 'pdf' && _insertFileData) {
+    const srcDoc = await PDFDocument.load(_insertFileData);
+    const copied = await doc.copyPages(srcDoc, srcDoc.getPageIndices());
+    copied.forEach(p => doc.addPage(p));
+    const pages = doc.getPages();
+    const startIdx = pages.length - copied.length;
+    for (let i = 0; i < copied.length; i++) {
+      for (let j = pages.length - 1; j > insertIdx + i; j--) {
+        const temp = pages[j]; pages[j] = pages[j-1]; pages[j-1] = temp;
+      }
+    }
+  }
+  
+  pdfBytes = await doc.save();
+  saveToStorage();
+  await loadPDF(pdfBytes);
+  renderPage(currentPage);
+  closeInsertModal();
+}
+</script>
+</body>
+</html>
