@@ -445,16 +445,19 @@ async function loadPageAsync(pageNum, scale) {
     slot.appendChild(canvas)
     _wfCanvasMap.set(pageNum, canvas)
 
-    // GC far-away pages
-    if (_wfCanvasMap.size > 25) {
-      var allKeys = Array.from(_wfCanvasMap.keys()).sort(function(a,b){return a-b})
-      var keep = new Set()
-      var slots2 = document.querySelectorAll('.page-slot')
-      for (var si = 0; si < slots2.length; si++) {
-        var r = slots2[si].getBoundingClientRect()
-        if (r.top < window.innerHeight + 1000 && r.bottom > -1000) keep.add(parseInt(slots2[si].dataset.page))
+    // GC: 回收远距离页面，保持内存上限
+    var keep = new Set()
+    var slots2 = document.querySelectorAll('.page-slot')
+    for (var si = 0; si < slots2.length; si++) {
+      var r = slots2[si].getBoundingClientRect()
+      if (r.top < window.innerHeight * 2 && r.bottom > -window.innerHeight) {
+        keep.add(parseInt(slots2[si].dataset.page))
       }
-      for (var ki = 0; ki < allKeys.length && _wfCanvasMap.size > 15; ki++) {
+    }
+    // 当缓存超过20页时清理（比原来更保守）
+    if (_wfCanvasMap.size > 20) {
+      var allKeys = Array.from(_wfCanvasMap.keys()).sort(function(a,b){return a-b})
+      for (var ki = 0; ki < allKeys.length && _wfCanvasMap.size > 12; ki++) {
         var k = allKeys[ki]
         if (!keep.has(k)) {
           var os = document.querySelector('.page-slot[data-page="' + k + '"]')
