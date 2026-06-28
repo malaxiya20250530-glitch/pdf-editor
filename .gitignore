@@ -10,3 +10,10 @@ index_optimized.html
 patch_*.py
 eval_heavy.js
 _apk_*/
+.state.lock
+*.idsig
+
+# 密钥文件
+debug.keystore
+build.keystore
+*.jks
