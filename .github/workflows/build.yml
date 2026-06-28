@@ -20,39 +20,32 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Install dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip unzip
+
       - name: Patch APK
         run: |
-          set -ex
-          # Debug: show available tools
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la
+          set -x
+          cp -v pdf-editor.apk pdf-editor-patched.apk
           
-          # Original APK is already checked out
-          cp pdf-editor.apk pdf-editor-patched.apk
+          echo "=== Remove old signature ==="
+          zip -d pdf-editor-patched.apk "META-INF/*" 2>&1 || echo "(no META-INF to remove)"
           
-          # Remove old signature
-          zip -d pdf-editor-patched.apk "META-INF/*" || true
+          echo "=== Update assets ==="
+          zip -u pdf-editor-patched.apk assets/index.html 2>&1
+          zip -u pdf-editor-patched.apk assets/pdf.min.mjs 2>&1
+          zip -u pdf-editor-patched.apk assets/pdf.worker.min.mjs 2>&1
+          zip -u pdf-editor-patched.apk assets/pdf-lib.min.js 2>&1
           
-          # Update index.html
-          zip -u pdf-editor-patched.apk assets/index.html
-          
-          # Add bundled pdf.js files
-          zip -u pdf-editor-patched.apk assets/pdf.min.mjs
-          zip -u pdf-editor-patched.apk assets/pdf.worker.min.mjs
-          zip -u pdf-editor-patched.apk assets/pdf-lib.min.js
-          
-          echo "=== Files in APK ==="
-          unzip -l pdf-editor-patched.apk | head -8
-          
+          echo "=== Verify ==="
+          unzip -l pdf-editor-patched.apk 2>&1 | grep -E "assets/|classes.dex" | head -10
+
       - name: Sign APK
         run: |
-          set -ex
-          
-          # Find build tools
-          BUILD_TOOLS=$(ls -d ${ANDROID_SDK_ROOT}/build-tools/* 2>/dev/null | tail -1)
+          set -x
+          BUILD_TOOLS=$(ls -d ${ANDROID_SDK_ROOT}/build-tools/*/ 2>/dev/null | tail -1)
           echo "BUILD_TOOLS=$BUILD_TOOLS"
           
-          # Generate keystore
           keytool -genkey -v -noprompt \
             -alias pdfeditor \
             -keyalg RSA -keysize 2048 -validity 10000 \
@@ -61,23 +54,17 @@ jobs:
             -keypass android \
             -dname "CN=PDF Editor, OU=Dev, O=PDFEditor, L=Unknown, ST=Unknown, C=CN"
           
-          # Align (BEFORE signing!)
-          ${BUILD_TOOLS}/zipalign -f -p 4 pdf-editor-patched.apk pdf-editor-aligned.apk
+          ${BUILD_TOOLS}zipalign -f -p 4 pdf-editor-patched.apk pdf-editor-aligned.apk
           
-          # Sign
-          ${BUILD_TOOLS}/apksigner sign \
+          ${BUILD_TOOLS}apksigner sign \
             --ks build.keystore \
             --ks-key-alias pdfeditor \
             --ks-pass pass:android \
             --key-pass pass:android \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
             --out pdf-editor-optimized.apk \
             pdf-editor-aligned.apk
           
-          echo "=== APK Info ==="
           ls -la pdf-editor-optimized.apk
-          ${BUILD_TOOLS}/apksigner verify --verbose pdf-editor-optimized.apk || true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
