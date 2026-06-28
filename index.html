@@ -30,8 +30,10 @@ body{background:var(--reader-bg);color:var(--reader-text);height:100vh;overflow:
 .waterfall-scroll .page-slot{scroll-snap-align:start}
 .page-container canvas{will-change:transform;backface-visibility:hidden}
 .hud{will-change:opacity,transform;transform:translateZ(0)}
+.page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
 .page-container canvas{will-change:transform;backface-visibility:hidden}
 .hud{will-change:opacity,transform;transform:translateZ(0)}
+.page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
 
 /* ===== 智能反色模式 ===== */
 body.dark-reader{background:#1a1b26;color:#c0caf5}
@@ -328,12 +330,15 @@ async function renderPage(num) {
   
   container.innerHTML = ''
   const page = await pdfDoc.getPage(currentPage)
+  const dpr = window.devicePixelRatio || 1
   const vp = page.getViewport({ scale: zoom })
   const canvas = document.createElement('canvas')
-  canvas.width = vp.width
-  canvas.height = vp.height
+  canvas.width = vp.width * dpr
+  canvas.height = vp.height * dpr
   canvas.style.cssText = 'width:100%;height:auto'
-  await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise
+  var ctx2 = canvas.getContext('2d')
+  ctx2.scale(dpr, dpr)
+  await page.render({ canvasContext: ctx2, viewport: vp }).promise
   
   const slot = document.createElement('div')
   slot.className = 'page-slot'
@@ -363,7 +368,10 @@ async function renderWaterfall() {
   _wfRequestedPages.clear()
   if (_wfObserver) { _wfObserver.disconnect(); _wfObserver = null }
 
-  const scale = zoom * 0.5
+  const dpr = window.devicePixelRatio || 1
+  const screenW = window.innerWidth
+  // 计算适合屏幕宽度的缩放比例（加20%边距）
+  const scale = (screenW * 0.9) / 612
   const pageDims = []
 
   for (let i = 1; i <= pdfDoc.numPages; i++) {
@@ -413,12 +421,17 @@ async function loadPageAsync(pageNum, scale) {
     if (!slot || slot.querySelector('canvas')) return
 
     var page = await pdfDoc.getPage(pageNum)
-    var vp = page.getViewport({ scale })
+    var dpr = window.devicePixelRatio || 1
+    var vp = page.getViewport({ scale: scale })
     var canvas = document.createElement('canvas')
-    canvas.width = vp.width; canvas.height = vp.height
+    // 高清渲染：放大 canvas 再用 CSS 缩小
+    canvas.width = vp.width * dpr
+    canvas.height = vp.height * dpr
     canvas.style.cssText = 'width:100%;height:auto;display:block'
 
-    await page.render({ canvasContext: canvas.getContext('2d', { alpha: false }), viewport: vp }).promise
+    var ctx = canvas.getContext('2d')
+    ctx.scale(dpr, dpr)
+    await page.render({ canvasContext: ctx, viewport: vp }).promise
     slot.innerHTML = ''; slot.style.minHeight = ''; slot.style.background = ''
     slot.appendChild(canvas)
     _wfCanvasMap.set(pageNum, canvas)
