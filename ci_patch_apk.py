@@ -28,8 +28,18 @@ def main():
     jarsigner = shutil.which('jarsigner')
     zipalign = shutil.which('zipalign')
     keytool = shutil.which('keytool')
+    
+    # GitHub Actions: Android SDK build-tools 不在 PATH 中
+    if not zipalign:
+        sdk = os.environ.get('ANDROID_SDK_ROOT') or os.environ.get('ANDROID_HOME') or ''
+        bt = os.path.join(sdk, 'build-tools')
+        if os.path.isdir(bt):
+            vers = sorted(os.listdir(bt))
+            if vers:
+                zipalign = os.path.join(bt, vers[-1], 'zipalign')
+    
     if not jarsigner or not zipalign:
-        print("❌ 缺少 jarsigner 或 zipalign"); sys.exit(1)
+        print('❌ 缺少 jarsigner 或 zipalign'); sys.exit(1)
     
     # 如果密钥库不存在则创建
     if not os.path.exists(KEYSTORE) and keytool:
