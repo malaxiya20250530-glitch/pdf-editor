@@ -1,0 +1,15 @@
+task: "优化 PDF 纯净阅读器的阅读体验：提升瀑布流滚动流畅度、降低 HUD 响应延迟、加速翻页渲染"
+coordinator:
+  max_cycles: 10
+  ui:
+    interaction_mode: auto
+eval:
+  cmd: "cd {cwd} && node eval.js --split dev"
+  metric: composite
+  direction: maximize
+  timeout: 60
+trunk_branch: main
+protected_paths:
+  - "node_modules/"
+  - "*.apk"
+  - "*.keystore"

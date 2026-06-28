@@ -1,6 +1,12 @@
 build/
 .gradle/
-*.apk
-*.jks
+node_modules/
 __pycache__/
 .DS_Store
+*.idsig
+index.html.bak
+index.html.bak2
+index_optimized.html
+patch_*.py
+eval_heavy.js
+_apk_*/

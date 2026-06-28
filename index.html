@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=5.0">
 <title>PDF 纯净阅读</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231a1b26'/><path d='M28 20 L28 80 L72 80 L72 48 L60 48 L60 36 L48 36 L48 20 Z' fill='%23c0caf5'/><path d='M48 20 L48 36 L60 36 Z' fill='%23565f89'/></svg>">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs" type="module"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+<script src="pdf.min.mjs" type="module"></script>
+<script src="pdf-lib.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--reader-bg:#f5f0e8;--reader-text:#2c2c2c;--overlay-bg:rgba(0,0,0,.35);--glass-bg:rgba(30,32,48,.82);--glass-border:rgba(255,255,255,.08);--accent:#7aa2f7;--text2:#9aa5ce;--radius:12px}
@@ -22,6 +22,16 @@ body{background:var(--reader-bg);color:var(--reader-text);height:100vh;overflow:
 
 /* 瀑布流翻页 */
 .waterfall .page-slot{margin:0 auto;width:100%}
+
+/* 滚动性能优化 */
+#reader{contain:layout style paint;-webkit-overflow-scrolling:touch}
+.page-container{contain:layout style}
+#reader.waterfall-scroll{scroll-behavior:smooth;scroll-snap-type:y proximity}
+.waterfall-scroll .page-slot{scroll-snap-align:start}
+.page-container canvas{will-change:transform;backface-visibility:hidden}
+.hud{will-change:opacity,transform;transform:translateZ(0)}
+.page-container canvas{will-change:transform;backface-visibility:hidden}
+.hud{will-change:opacity,transform;transform:translateZ(0)}
 
 /* ===== 智能反色模式 ===== */
 body.dark-reader{background:#1a1b26;color:#c0caf5}
@@ -281,8 +291,8 @@ input[type=file]{display:none}
 <div class="toast" id="toast"></div>
 
 <script type="module">
-import * as pdfjsLib from 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs';
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.worker.min.mjs';
+import * as pdfjsLib from './pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs';
 
 // ===== 状态 =====
 let pdfDoc = null, pdfBytes = null, currentPage = 1, zoom = 1.0
@@ -341,24 +351,99 @@ async function renderPage(num) {
 }
 
 // ===== 瀑布流渲染 =====
+// ===== 瀑布流渲染（懒加载 + IntersectionObserver） =====
+const WATERFALL_BUFFER = 3
+let _wfObserver = null, _wfCanvasMap = new Map(), _wfHeightMap = new Map()
+let _wfRendering = false, _wfRequestedPages = new Set()
+
 async function renderWaterfall() {
+  if (!pdfDoc) return
   container.innerHTML = ''
-  const fragment = document.createDocumentFragment()
+  _wfCanvasMap.clear(); _wfHeightMap.clear()
+  _wfRequestedPages.clear()
+  if (_wfObserver) { _wfObserver.disconnect(); _wfObserver = null }
+
   const scale = zoom * 0.5
-  
+  const pageDims = []
+
   for (let i = 1; i <= pdfDoc.numPages; i++) {
     const page = await pdfDoc.getPage(i)
     const vp = page.getViewport({ scale })
-    const canvas = document.createElement('canvas')
-    canvas.width = vp.width
-    canvas.height = vp.height
-    canvas.style.cssText = 'width:100%;height:auto;margin-bottom:4px'
-    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise
-    fragment.appendChild(canvas)
+    pageDims.push({ width: vp.width, height: vp.height })
+    _wfHeightMap.set(i, vp.height)
   }
-  container.appendChild(fragment)
+
+  const frag = document.createDocumentFragment()
+  for (let i = 0; i < pdfDoc.numPages; i++) {
+    const slot = document.createElement('div')
+    slot.className = 'page-slot'
+    slot.dataset.page = i + 1
+    const aspect = pageDims[i] ? (pageDims[i].height / pageDims[i].width * 100) : 60
+    const ph = Math.max(40, window.innerWidth * 0.5 * (aspect / 100))
+    slot.style.cssText = 'width:100%;margin-bottom:4px;min-height:' + ph + 'px;background:rgba(0,0,0,0.02)'
+    frag.appendChild(slot)
+  }
+  container.appendChild(frag)
+
+  _wfObserver = new IntersectionObserver(function(entries) {
+    for (var ei = 0; ei < entries.length; ei++) {
+      var entry = entries[ei]
+      var pageNum = parseInt(entry.target.dataset.page)
+      if (entry.isIntersecting) {
+        for (var p = Math.max(1, pageNum - WATERFALL_BUFFER); p <= Math.min(pdfDoc.numPages, pageNum + WATERFALL_BUFFER); p++) {
+          if (!_wfRequestedPages.has(p)) { _wfRequestedPages.add(p); loadPageAsync(p, scale) }
+        }
+      }
+    }
+  }, { rootMargin: '500px 0px' })
+
+  var slots = document.querySelectorAll('.page-slot')
+  for (var si = 0; si < slots.length; si++) { _wfObserver.observe(slots[si]) }
+
+  for (var p = 1; p <= Math.min(5, pdfDoc.numPages); p++) {
+    if (!_wfRequestedPages.has(p)) { _wfRequestedPages.add(p); loadPageAsync(p, scale) }
+  }
+
   updateSlider()
 }
+
+async function loadPageAsync(pageNum, scale) {
+  try {
+    var slot = document.querySelector('.page-slot[data-page="' + pageNum + '"]')
+    if (!slot || slot.querySelector('canvas')) return
+
+    var page = await pdfDoc.getPage(pageNum)
+    var vp = page.getViewport({ scale })
+    var canvas = document.createElement('canvas')
+    canvas.width = vp.width; canvas.height = vp.height
+    canvas.style.cssText = 'width:100%;height:auto;display:block'
+
+    await page.render({ canvasContext: canvas.getContext('2d', { alpha: false }), viewport: vp }).promise
+    slot.innerHTML = ''; slot.style.minHeight = ''; slot.style.background = ''
+    slot.appendChild(canvas)
+    _wfCanvasMap.set(pageNum, canvas)
+
+    // GC far-away pages
+    if (_wfCanvasMap.size > 25) {
+      var allKeys = Array.from(_wfCanvasMap.keys()).sort(function(a,b){return a-b})
+      var keep = new Set()
+      var slots2 = document.querySelectorAll('.page-slot')
+      for (var si = 0; si < slots2.length; si++) {
+        var r = slots2[si].getBoundingClientRect()
+        if (r.top < window.innerHeight + 1000 && r.bottom > -1000) keep.add(parseInt(slots2[si].dataset.page))
+      }
+      for (var ki = 0; ki < allKeys.length && _wfCanvasMap.size > 15; ki++) {
+        var k = allKeys[ki]
+        if (!keep.has(k)) {
+          var os = document.querySelector('.page-slot[data-page="' + k + '"]')
+          if (os) { os.innerHTML = ''; os.style.minHeight = '40px'; os.style.background = 'rgba(0,0,0,0.02)' }
+          _wfCanvasMap.delete(k); _wfRequestedPages.delete(k)
+        }
+      }
+    }
+  } catch(e) { console.error('Page ' + pageNum + ':', e) }
+}
+
 
 // ===== HUD 切换 =====
 let hudTimer = null
@@ -580,24 +665,70 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();renderPage(currentPage+1)}
 })
 
-// ===== 触摸翻页（阅读模式） =====
-let touchStartX = 0, touchStartY = 0
-reader.addEventListener('touchstart', e => {
+// ===== 触摸翻页（增强版：速度感知 + 惯性 + 视觉反馈） =====
+let touchStartX = 0, touchStartY = 0, touchStartTime = 0
+let touchMoved = false, touchMoveX = 0, touchMoveY = 0
+
+reader.addEventListener('touchstart', function(e) {
   touchStartX = e.touches[0].clientX
   touchStartY = e.touches[0].clientY
+  touchStartTime = Date.now()
+  touchMoved = false
+  touchMoveX = 0
+  touchMoveY = 0
 }, { passive: true })
-reader.addEventListener('touchend', e => {
-  const dx = e.changedTouches[0].clientX - touchStartX
-  const dy = e.changedTouches[0].clientY - touchStartY
-  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-    if (dx < 0) renderPage(currentPage + 1)
-    else renderPage(currentPage - 1)
+
+reader.addEventListener('touchmove', function(e) {
+  if (!touchMoved) {
+    touchMoved = true
+    // 第一个 move 事件才记录
   }
-  if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx) * 1.5) {
-    if (dy < 0) renderPage(currentPage + 1)
-    else renderPage(currentPage - 1)
+  touchMoveX = e.touches[0].clientX - touchStartX
+  touchMoveY = e.touches[0].clientY - touchStartY
+}, { passive: true })
+
+reader.addEventListener('touchend', function(e) {
+  var dx = (e.changedTouches[0] || e.touches[0]).clientX - touchStartX
+  var dy = (e.changedTouches[0] || e.touches[0]).clientY - touchStartY
+  var dt = Date.now() - touchStartTime
+
+  // 速度计算 (px/ms)
+  var vx = dt > 0 ? Math.abs(dx) / dt : 0
+  var vy = dt > 0 ? Math.abs(dy) / dt : 0
+  var absDx = Math.abs(dx), absDy = Math.abs(dy)
+
+  // 阈值动态调整：快速滑动用更小的阈值
+  var threshold = vx > 0.8 || vy > 0.8 ? 30 : (vx > 0.4 || vy > 0.4 ? 45 : 60)
+
+  // 在单页模式下：翻页手势
+  // 在瀑布流模式下：滚动由浏览器处理，只检测明确翻页
+  if (pageMode === 'single') {
+    if (absDx > threshold && absDx > absDy * 1.3) {
+      renderPage(dx < 0 ? currentPage + 1 : currentPage - 1)
+    } else if (absDy > threshold && absDy > absDx * 1.3) {
+      renderPage(dy < 0 ? currentPage + 1 : currentPage - 1)
+    }
+  }
+  // 瀑布流模式下只在速度很快时翻页（短促快滑）
+  else if ((vx > 0.6 || vy > 0.6) && dt < 250) {
+    if (absDx > absDy && absDx > threshold) {
+      renderPage(dx < 0 ? currentPage + 1 : currentPage - 1)
+    } else if (absDy > absDx && absDy > threshold) {
+      renderPage(dy < 0 ? currentPage + 1 : currentPage - 1)
+    }
   }
 }, { passive: true })
+
+window.__exports = {
+  toggleHUD, renderPage, togglePageMode, renderWaterfall,
+  openFile, buildDrawer, renderEditPage, toggleDrawer,
+  toggleDarkMode, toggleCrop, closeFile,
+  get pageMode() { return pageMode; },
+  get currentPage() { return currentPage; },
+  get pdfDoc() { return pdfDoc; },
+  set pdfDoc(v) { pdfDoc = v; },
+  get pdfBytes() { return pdfBytes; }
+};
 
 console.log('📖 纯净阅读 v2.0 已加载')
 </script>
