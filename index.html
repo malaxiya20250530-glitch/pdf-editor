@@ -31,10 +31,14 @@ body{background:var(--reader-bg);color:var(--reader-text);height:100vh;overflow:
 .page-container canvas{will-change:transform;backface-visibility:hidden}
 .hud{will-change:opacity,transform;transform:translateZ(0)}
 .page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
+/* 电子书翻页动画 */
+#pageContainer{transition:transform .25s cubic-bezier(.4,0,.2,1),opacity .2s ease}
+#pageContainer.slide-left{transform:translateX(-15%);opacity:0}
+#pageContainer.slide-right{transform:translateX(15%);opacity:0}
+
 .page-container canvas{will-change:transform;backface-visibility:hidden}
 .hud{will-change:opacity,transform;transform:translateZ(0)}
 .page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
-
 /* ===== 智能反色模式 ===== */
 body.dark-reader{background:#1a1b26;color:#c0caf5}
 .dark-reader .page-container img{filter:invert(0.92) hue-rotate(180deg) contrast(0.88);background:#1a1b26}
@@ -678,56 +682,68 @@ document.addEventListener('keydown',e=>{
   if(e.key==='ArrowRight'||e.key==='ArrowDown'){e.preventDefault();renderPage(currentPage+1)}
 })
 
-// ===== 触摸翻页（增强版：速度感知 + 惯性 + 视觉反馈） =====
+// ===== 电子书翻页：点击分区 + 滑动翻页 + 动画 =====
 let touchStartX = 0, touchStartY = 0, touchStartTime = 0
-let touchMoved = false, touchMoveX = 0, touchMoveY = 0
+let touchMoved = false
 
 reader.addEventListener('touchstart', function(e) {
   touchStartX = e.touches[0].clientX
   touchStartY = e.touches[0].clientY
   touchStartTime = Date.now()
   touchMoved = false
-  touchMoveX = 0
-  touchMoveY = 0
 }, { passive: true })
 
 reader.addEventListener('touchmove', function(e) {
-  if (!touchMoved) {
+  if (Math.abs(e.touches[0].clientX - touchStartX) > 10 ||
+      Math.abs(e.touches[0].clientY - touchStartY) > 10) {
     touchMoved = true
-    // 第一个 move 事件才记录
   }
-  touchMoveX = e.touches[0].clientX - touchStartX
-  touchMoveY = e.touches[0].clientY - touchStartY
 }, { passive: true })
 
 reader.addEventListener('touchend', function(e) {
-  var dx = (e.changedTouches[0] || e.touches[0]).clientX - touchStartX
-  var dy = (e.changedTouches[0] || e.touches[0]).clientY - touchStartY
+  if (!pdfDoc) return
+  var cx = (e.changedTouches[0] || e.touches[0]).clientX
+  var cy = (e.changedTouches[0] || e.touches[0]).clientY
+  var dx = cx - touchStartX
+  var dy = cy - touchStartY
   var dt = Date.now() - touchStartTime
-
-  // 速度计算 (px/ms)
-  var vx = dt > 0 ? Math.abs(dx) / dt : 0
-  var vy = dt > 0 ? Math.abs(dy) / dt : 0
   var absDx = Math.abs(dx), absDy = Math.abs(dy)
-
-  // 阈值动态调整：快速滑动用更小的阈值
-  var threshold = vx > 0.8 || vy > 0.8 ? 30 : (vx > 0.4 || vy > 0.4 ? 45 : 60)
-
-  // 在单页模式下：翻页手势
-  // 在瀑布流模式下：滚动由浏览器处理，只检测明确翻页
-  if (pageMode === 'single') {
-    if (absDx > threshold && absDx > absDy * 1.3) {
-      renderPage(dx < 0 ? currentPage + 1 : currentPage - 1)
-    } else if (absDy > threshold && absDy > absDx * 1.3) {
-      renderPage(dy < 0 ? currentPage + 1 : currentPage - 1)
+  var vel = dt > 0 ? Math.max(absDx, absDy) / dt : 0
+  
+  // 瀑布流模式：快速滑动翻页
+  if (pageMode === 'waterfall') {
+    if (touchMoved && (vel > 0.5 || absDx > 80) && dt < 300) {
+      if (absDx > absDy) renderPage(dx > 0 ? currentPage - 1 : currentPage + 1)
+      else renderPage(dy > 0 ? currentPage - 1 : currentPage + 1)
     }
+    return
   }
-  // 瀑布流模式下只在速度很快时翻页（短促快滑）
-  else if ((vx > 0.6 || vy > 0.6) && dt < 250) {
-    if (absDx > absDy && absDx > threshold) {
-      renderPage(dx < 0 ? currentPage + 1 : currentPage - 1)
-    } else if (absDy > absDx && absDy > threshold) {
-      renderPage(dy < 0 ? currentPage + 1 : currentPage - 1)
+
+  // 单页模式 - 电子书翻页
+  function doPageTurn(targetPage, dir) {
+    var c = document.getElementById('pageContainer')
+    c.classList.add(dir === 'prev' ? 'slide-right' : 'slide-left')
+    setTimeout(function() {
+      renderPage(targetPage)
+      c.classList.remove('slide-right', 'slide-left')
+    }, 180)
+  }
+
+  if (touchMoved) {
+    var th = vel > 0.6 ? 40 : (vel > 0.3 ? 55 : 70)
+    if (absDx > th && absDx > absDy * 1.2) {
+      doPageTurn(dx < 0 ? currentPage + 1 : currentPage - 1, dx < 0 ? 'next' : 'prev')
+    } else if (absDy > th && absDy > absDx * 1.2) {
+      doPageTurn(dy < 0 ? currentPage + 1 : currentPage - 1, dy < 0 ? 'next' : 'prev')
+    }
+  } else {
+    var sw = window.innerWidth
+    if (cx < sw * 0.33) {
+      doPageTurn(currentPage - 1, 'prev')
+    } else if (cx > sw * 0.67) {
+      doPageTurn(currentPage + 1, 'next')
+    } else {
+      toggleHUD()
     }
   }
 }, { passive: true })
