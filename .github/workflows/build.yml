@@ -1,4 +1,4 @@
-name: Build APK
+name: Build Optimized APK
 
 on:
   push:
@@ -20,23 +20,65 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant execute permission
-        run: chmod +x gradlew || true
-
-      - name: Build APK
+      - name: Patch APK with optimized assets
         run: |
-          export ANDROID_HOME=$ANDROID_SDK_ROOT
-          ./gradlew assembleDebug || gradle assembleDebug
+          # Use original APK as base
+          cp pdf-editor.apk pdf-editor-patched.apk
+
+          # Remove old signature
+          zip -d pdf-editor-patched.apk "META-INF/*"
+
+          # Update index.html with optimized version
+          zip -u pdf-editor-patched.apk assets/index.html
+
+          # Add bundled pdf.js files for offline support
+          zip -u pdf-editor-patched.apk assets/pdf.min.mjs
+          zip -u pdf-editor-patched.apk assets/pdf.worker.min.mjs
+          zip -u pdf-editor-patched.apk assets/pdf-lib.min.js
+
+          # Generate debug keystore for signing
+          keytool -genkey -v -noprompt \
+            -alias pdfeditor \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -keystore build.keystore \
+            -storepass android \
+            -keypass android \
+            -dname "CN=PDF Editor, OU=Dev, O=PDFEditor, L=Unknown, ST=Unknown, C=CN"
+
+          # Align (must be BEFORE signing)
+          ANDROID_BUILD_TOOLS="${ANDROID_SDK_ROOT}/build-tools/*"
+          for dir in ${ANDROID_SDK_ROOT}/build-tools/*/; do
+            if [ -f "${dir}zipalign" ]; then
+              "${dir}zipalign" -f -p 4 pdf-editor-patched.apk pdf-editor-aligned.apk
+              break
+            fi
+          done
+
+          # Sign
+          for dir in ${ANDROID_SDK_ROOT}/build-tools/*/; do
+            if [ -f "${dir}apksigner" ]; then
+              "${dir}apksigner" sign \
+                --ks build.keystore \
+                --ks-key-alias pdfeditor \
+                --ks-pass pass:android \
+                --key-pass pass:android \
+                --out pdf-editor-optimized.apk \
+                pdf-editor-aligned.apk
+              break
+            fi
+          done
+
+          ls -la pdf-editor-optimized.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: pdf-editor-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: pdf-editor-optimized
+          path: pdf-editor-optimized.apk
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: pdf-editor-optimized.apk
           generate_release_notes: true
