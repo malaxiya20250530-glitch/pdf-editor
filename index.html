@@ -719,6 +719,13 @@ reader.addEventListener('touchend', function(e) {
   }
 }, { passive: true })
 
+// 导出到 window 供 Java 桥接调用
+window.toggleHUD = toggleHUD; window.renderPage = renderPage;
+window.togglePageMode = togglePageMode; window.renderWaterfall = renderWaterfall;
+window.openFile = openFile; window.buildDrawer = buildDrawer;
+window.renderEditPage = renderEditPage; window.toggleDrawer = toggleDrawer;
+window.toggleDarkMode = toggleDarkMode; window.toggleCrop = toggleCrop;
+window.closeFile = closeFile;
 window.__exports = {
   toggleHUD, renderPage, togglePageMode, renderWaterfall,
   openFile, buildDrawer, renderEditPage, toggleDrawer,
