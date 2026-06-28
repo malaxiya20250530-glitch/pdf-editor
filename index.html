@@ -748,17 +748,50 @@ reader.addEventListener('touchend', function(e) {
   }
 }, { passive: true })
 
-// 导出到 window 供 Java 桥接调用
-window.toggleHUD = toggleHUD; window.renderPage = renderPage;
-window.togglePageMode = togglePageMode; window.renderWaterfall = renderWaterfall;
-window.openFile = openFile; window.buildDrawer = buildDrawer;
-window.renderEditPage = renderEditPage; window.toggleDrawer = toggleDrawer;
-window.toggleDarkMode = toggleDarkMode; window.toggleCrop = toggleCrop;
+// 导出函数到 window 全局（供 onclick 和 Java 桥接调用）
+window.toggleHUD = toggleHUD;
+window.renderPage = renderPage;
+window.togglePageMode = togglePageMode;
+window.renderWaterfall = renderWaterfall;
+window.openFile = openFile;
+window.buildDrawer = buildDrawer;
+window.renderEditPage = renderEditPage;
+window.toggleDrawer = toggleDrawer;
+window.toggleDarkMode = toggleDarkMode;
+window.toggleCrop = toggleCrop;
 window.closeFile = closeFile;
+window.toggleSettings = toggleSettings;
+window.setBrightness = setBrightness;
+window.switchToEditor = switchToEditor;
+window.switchToReader = switchToReader;
+window.showMoreMenu = showMoreMenu;
+window.openMergeModal = openMergeModal;
+window.closeMergeModal = closeMergeModal;
+window.doMerge = doMerge;
+window.openSignatureModal = openSignatureModal;
+window.closeSignatureModal = closeSignatureModal;
+window.addSignature = addSignature;
+window.clearSignature = clearSignature;
+window.setSigColor = setSigColor;
+window.openTextModal = openTextModal;
+window.closeTextModal = closeTextModal;
+window.addText = addText;
+window.rotatePage = rotatePage;
+window.rotateAll = rotateAll;
+window.extractPage = extractPage;
+window.deletePage = deletePage;
+window.savePDF = savePDF;
+window.showFileInfo = showFileInfo;
+
 window.__exports = {
   toggleHUD, renderPage, togglePageMode, renderWaterfall,
   openFile, buildDrawer, renderEditPage, toggleDrawer,
   toggleDarkMode, toggleCrop, closeFile,
+  toggleSettings, setBrightness, switchToEditor, switchToReader,
+  showMoreMenu, openMergeModal, closeMergeModal, doMerge,
+  openSignatureModal, closeSignatureModal, addSignature, clearSignature, setSigColor,
+  openTextModal, closeTextModal, addText,
+  rotatePage, rotateAll, extractPage, deletePage, savePDF, showFileInfo,
   get pageMode() { return pageMode; },
   get currentPage() { return currentPage; },
   get pdfDoc() { return pdfDoc; },
