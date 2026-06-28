@@ -28,7 +28,7 @@ body{background:var(--reader-bg);color:var(--reader-text);height:100vh;overflow:
 .page-container{contain:layout style}
 #reader.waterfall-scroll{scroll-behavior:smooth;scroll-snap-type:y proximity}
 .waterfall-scroll .page-slot{scroll-snap-align:start}
-.page-container canvas{will-change:transform;backface-visibility:hidden}page-container canvas{will-change:transform;backface-visibility:hidden}
+.page-container canvas{will-change:transform;backface-visibility:hidden}
 
 
 /* 电子书翻页动画 */
@@ -309,18 +309,18 @@ const drawerList = document.getElementById('drawerList')
 
 // ===== 打开文件 =====
 async function openFile(e) {
-  try {
-    const file = e.target.files[0]; if (!file) return
-    _pdfFileName = file.name
-  document.getElementById('fileName').textContent = file.name
-  const buf = await file.arrayBuffer()
-  pdfBytes = new Uint8Array(buf)
-  pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise
-  document.getElementById('landing').classList.add('hidden')
-  document.getElementById('pageSlider').max = pdfDoc.numPages - 1
-  renderPage(1)
-  buildDrawer()
-  document.getElementById('mergeCurrent').textContent = `${pdfDoc.numPages} 页`
+    try {
+      const file = e.target.files[0]; if (!file) return
+      _pdfFileName = file.name
+    document.getElementById('fileName').textContent = file.name
+    const buf = await file.arrayBuffer()
+    pdfBytes = new Uint8Array(buf)
+    pdfDoc = await pdfjsLib.getDocument({ data: pdfBytes }).promise
+    document.getElementById('landing').classList.add('hidden')
+    document.getElementById('pageSlider').max = pdfDoc.numPages - 1
+    renderPage(1)
+    buildDrawer()
+    document.getElementById('mergeCurrent').textContent = `${pdfDoc.numPages} 页`
   } catch(e) {
     console.error('openFile:', e);
     showToast('无法打开文件: ' + e.message)
@@ -468,7 +468,7 @@ async function loadPageAsync(pageNum, scale) {
     }
   } catch(e) {
     console.error('Page ' + pageNum + ':', e);
-    if (window.showToast) showToast('页面 ' + pageNum + ' 渲染失败')
+    showToast('页面 ' + pageNum + ' 渲染失败')
   }
 }
 
@@ -497,7 +497,7 @@ function updateSlider() {
   }
 }
 
-function onSliderInput(el) {
+function onSliderInput(el) { if (!pdfDoc) return
   const bubble = document.getElementById('pageBubble')
   const page = parseInt(el.value) + 1
   bubble.textContent = `${page} / ${pdfDoc.numPages}`
@@ -680,7 +680,7 @@ function openMergeModal(){document.getElementById('mergeModal').classList.remove
 function closeMergeModal(){document.getElementById('mergeModal').classList.add('hidden')}
 function onMergeFilesSelected(e){mergeFiles=Array.from(e.target.files).filter(f=>f.type==='application/pdf')
   document.getElementById('mergeFileList').innerHTML=mergeFiles.map((f,i)=>`<div>📄 ${i+1}. ${f.name}</div>`).join('')}
-async function doMerge(){if(!pdfBytes&&mergeFiles.length===0)return
+async function doMerge(){if(!pdfBytes||mergeFiles.length===0)return
   const{PDFDocument}=PDFLib;const m=await PDFDocument.create()
   if(pdfBytes){const s=await PDFDocument.load(pdfBytes);(await m.copyPages(s,s.getPageIndices())).forEach(p=>m.addPage(p))}
   for(const f of mergeFiles){const b=await f.arrayBuffer();const s=await PDFDocument.load(b);(await m.copyPages(s,s.getPageIndices())).forEach(p=>m.addPage(p))}

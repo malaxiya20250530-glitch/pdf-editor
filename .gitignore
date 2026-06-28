@@ -11,9 +11,15 @@ patch_*.py
 eval_heavy.js
 _apk_*/
 .state.lock
-*.idsig
 
 # 密钥文件
 debug.keystore
 build.keystore
 *.jks
+# 构建产物
+pdf-editor-optimized.apk
+pdf-editor-unsigned.apk
+pdf-editor-signed.apk
+pdf-editor-aligned.apk
+pdf-editor-tmp.apk
+pdf-editor.apk.idsig
