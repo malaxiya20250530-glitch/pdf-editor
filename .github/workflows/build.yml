@@ -20,51 +20,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq zip unzip
-
-      - name: Patch APK
-        run: |
-          set -x
-          cp -v pdf-editor.apk pdf-editor-patched.apk
-          
-          echo "=== Remove old signature ==="
-          zip -d pdf-editor-patched.apk "META-INF/*" 2>&1 || echo "(no META-INF to remove)"
-          
-          echo "=== Update assets ==="
-          zip -u pdf-editor-patched.apk assets/index.html 2>&1
-          zip -u pdf-editor-patched.apk assets/pdf.min.mjs 2>&1
-          zip -u pdf-editor-patched.apk assets/pdf.worker.min.mjs 2>&1
-          zip -u pdf-editor-patched.apk assets/pdf-lib.min.js 2>&1
-          
-          echo "=== Verify ==="
-          unzip -l pdf-editor-patched.apk 2>&1 | grep -E "assets/|classes.dex" | head -10
-
-      - name: Sign APK
-        run: |
-          set -x
-          BUILD_TOOLS=$(ls -d ${ANDROID_SDK_ROOT}/build-tools/*/ 2>/dev/null | tail -1)
-          echo "BUILD_TOOLS=$BUILD_TOOLS"
-          
-          keytool -genkey -v -noprompt \
-            -alias pdfeditor \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -keystore build.keystore \
-            -storepass android \
-            -keypass android \
-            -dname "CN=PDF Editor, OU=Dev, O=PDFEditor, L=Unknown, ST=Unknown, C=CN"
-          
-          ${BUILD_TOOLS}zipalign -f -p 4 pdf-editor-patched.apk pdf-editor-aligned.apk
-          
-          ${BUILD_TOOLS}apksigner sign \
-            --ks build.keystore \
-            --ks-key-alias pdfeditor \
-            --ks-pass pass:android \
-            --key-pass pass:android \
-            --out pdf-editor-optimized.apk \
-            pdf-editor-aligned.apk
-          
-          ls -la pdf-editor-optimized.apk
+      - name: Patch and sign APK
+        run: python3 ci_patch_apk.py
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
