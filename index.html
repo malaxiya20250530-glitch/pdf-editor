@@ -28,17 +28,17 @@ body{background:var(--reader-bg);color:var(--reader-text);height:100vh;overflow:
 .page-container{contain:layout style}
 #reader.waterfall-scroll{scroll-behavior:smooth;scroll-snap-type:y proximity}
 .waterfall-scroll .page-slot{scroll-snap-align:start}
-.page-container canvas{will-change:transform;backface-visibility:hidden}
-.hud{will-change:opacity,transform;transform:translateZ(0)}
-.page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
+.page-container canvas{will-change:transform;backface-visibility:hidden}page-container canvas{will-change:transform;backface-visibility:hidden}
+
+
 /* 电子书翻页动画 */
 #pageContainer{transition:transform .25s cubic-bezier(.4,0,.2,1),opacity .2s ease}
 #pageContainer.slide-left{transform:translateX(-15%);opacity:0}
 #pageContainer.slide-right{transform:translateX(15%);opacity:0}
 
-.page-container canvas{will-change:transform;backface-visibility:hidden}
-.hud{will-change:opacity,transform;transform:translateZ(0)}
-.page-container canvas{image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;-ms-interpolation-mode:bicubic}
+
+
+
 /* ===== 智能反色模式 ===== */
 body.dark-reader{background:#1a1b26;color:#c0caf5}
 .dark-reader .page-container img{filter:invert(0.92) hue-rotate(180deg) contrast(0.88);background:#1a1b26}
@@ -309,8 +309,9 @@ const drawerList = document.getElementById('drawerList')
 
 // ===== 打开文件 =====
 async function openFile(e) {
-  const file = e.target.files[0]; if (!file) return
-  _pdfFileName = file.name
+  try {
+    const file = e.target.files[0]; if (!file) return
+    _pdfFileName = file.name
   document.getElementById('fileName').textContent = file.name
   const buf = await file.arrayBuffer()
   pdfBytes = new Uint8Array(buf)
@@ -320,7 +321,10 @@ async function openFile(e) {
   renderPage(1)
   buildDrawer()
   document.getElementById('mergeCurrent').textContent = `${pdfDoc.numPages} 页`
-}
+  } catch(e) {
+    console.error('openFile:', e);
+    showToast('无法打开文件: ' + e.message)
+  }
 
 // ===== 渲染页面（纯净模式） =====
 async function renderPage(num) {
@@ -366,7 +370,8 @@ let _wfObserver = null, _wfCanvasMap = new Map(), _wfHeightMap = new Map()
 let _wfRendering = false, _wfRequestedPages = new Set()
 
 async function renderWaterfall() {
-  if (!pdfDoc) return
+  try {
+    if (!pdfDoc) return
   container.innerHTML = ''
   _wfCanvasMap.clear(); _wfHeightMap.clear()
   _wfRequestedPages.clear()
@@ -458,7 +463,10 @@ async function loadPageAsync(pageNum, scale) {
         }
       }
     }
-  } catch(e) { console.error('Page ' + pageNum + ':', e) }
+  } catch(e) {
+    console.error('Page ' + pageNum + ':', e);
+    if (window.showToast) showToast('页面 ' + pageNum + ' 渲染失败')
+  }
 }
 
 
@@ -798,6 +806,13 @@ window.__exports = {
   set pdfDoc(v) { pdfDoc = v; },
   get pdfBytes() { return pdfBytes; }
 };
+
+function showToast(msg) {
+  var t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show') }, 2000);
+}
 
 console.log('📖 纯净阅读 v2.0 已加载')
 </script>
